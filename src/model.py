@@ -1,13 +1,14 @@
-
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.dummy import DummyRegressor
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import (
     mean_absolute_error,
     mean_squared_error,
@@ -15,51 +16,49 @@ from sklearn.metrics import (
     recall_score,
     f1_score,
 )
-from sklearn.dummy import DummyRegressor
 
-
+# Candidate power thresholds used to convert the continuous target into
+# ON/OFF labels for the two-stage model.
 CANDIDATE_THRESHOLDS_W = [5.0, 10.0, 20.0, 30.0]
 
 
 def metrics(y_true, y_pred):
-    """Calculate regression and energy estimation metrics."""
-
+    """Calculate minute-level regression metrics and total-energy error."""
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.clip(np.asarray(y_pred, dtype=float), 0, None)
 
-    mae = mean_absolute_error(y_true, y_pred)
-    rmse = mean_squared_error(y_true, y_pred) ** 0.5
-
+    # Each observation represents one minute.
+    # W-minutes / 60,000 = kWh.
     energy_true = float(np.sum(y_true) / 60000.0)
     energy_pred = float(np.sum(y_pred) / 60000.0)
 
     return {
-        "MAE_W": float(mae),
-        "RMSE_W": float(rmse),
+        "MAE_W": float(mean_absolute_error(y_true, y_pred)),
+        "RMSE_W": float(mean_squared_error(y_true, y_pred) ** 0.5),
         "actual_energy_kWh": energy_true,
         "predicted_energy_kWh": energy_pred,
-        "absolute_energy_error_kWh": float(
-            abs(energy_true - energy_pred)
-        ),
+        "absolute_energy_error_kWh": float(abs(energy_true - energy_pred)),
     }
 
 
-def make_classifier(n_estimators=50):
+def make_classifier():
+    """Create the ON/OFF Random Forest classifier."""
     return RandomForestClassifier(
-        n_estimators=n_estimators,
-        max_depth=16,
-        min_samples_leaf=4,
+        n_estimators=40,
+        max_depth=18,
+        min_samples_leaf=3,
         class_weight="balanced_subsample",
         n_jobs=-1,
         random_state=42,
     )
 
 
-def make_regressor(n_estimators=50):
+def make_regressor():
+    """Create the washing-machine power Random Forest regressor."""
     return RandomForestRegressor(
-        n_estimators=n_estimators,
-        max_depth=16,
-        min_samples_leaf=4,
+        n_estimators=50,
+        max_depth=18,
+        min_samples_leaf=3,
         n_jobs=-1,
         random_state=42,
     )
@@ -71,7 +70,12 @@ def select_activity_threshold(
     candidate_thresholds=CANDIDATE_THRESHOLDS_W,
     validation_fraction=0.2,
 ):
-    """Select activity threshold using chronological validation."""
+    """
+    Select an ON/OFF threshold using an internal chronological split
+    of the outer training data only. The outer test set is not used.
+    """
+    if not 0 < validation_fraction < 1:
+        raise ValueError("validation_fraction must be between 0 and 1.")
 
     split = int(len(X_train) * (1 - validation_fraction))
 
@@ -87,7 +91,6 @@ def select_activity_threshold(
     rows = []
 
     for threshold in candidate_thresholds:
-
         labels_inner = (y_inner >= threshold).astype(int)
         labels_val = (y_val >= threshold).astype(int)
 
@@ -97,41 +100,51 @@ def select_activity_threshold(
                 "validation_precision": np.nan,
                 "validation_recall": np.nan,
                 "validation_f1": np.nan,
-                "status": "Skipped: only one training class",
+                "status": "Skipped: inner training has only one class",
             })
             continue
 
-        classifier = make_classifier(n_estimators=40)
-
+        classifier = make_classifier()
         classifier.fit(X_inner, labels_inner)
-        predictions = classifier.predict(X_val)
+
+        predicted_labels = classifier.predict(X_val)
 
         rows.append({
             "threshold_w": float(threshold),
             "validation_precision": float(
                 precision_score(
-                    labels_val, predictions, zero_division=0
+                    labels_val,
+                    predicted_labels,
+                    zero_division=0,
                 )
             ),
             "validation_recall": float(
                 recall_score(
-                    labels_val, predictions, zero_division=0
+                    labels_val,
+                    predicted_labels,
+                    zero_division=0,
                 )
             ),
             "validation_f1": float(
                 f1_score(
-                    labels_val, predictions, zero_division=0
+                    labels_val,
+                    predicted_labels,
+                    zero_division=0,
                 )
             ),
             "status": "Evaluated",
         })
 
     tuning = pd.DataFrame(rows)
+
     valid = tuning.dropna(subset=["validation_f1"])
 
     if valid.empty:
-        raise ValueError("No candidate threshold produced a valid classifier.")
+        raise ValueError(
+            "No candidate threshold produced a valid classifier."
+        )
 
+    # Highest validation F1 wins; lower threshold wins an exact tie.
     best = valid.sort_values(
         ["validation_f1", "threshold_w"],
         ascending=[False, True],
@@ -140,19 +153,148 @@ def select_activity_threshold(
     return float(best["threshold_w"]), tuning
 
 
+def plot_actual_vs_predicted(predictions, model_name, output_path):
+    """
+    Save a readable comparison plot.
+
+    The full test predictions remain unchanged. For the detailed plot,
+    select a 24-hour test window with the greatest actual washing-machine
+    energy so the reviewer can inspect a period containing real activity.
+    """
+    plot_data = predictions.copy()
+
+    plot_data["timestamp"] = pd.to_datetime(
+        plot_data["timestamp"]
+    )
+
+    plot_data = (
+        plot_data
+        .sort_values("timestamp")
+        .reset_index(drop=True)
+    )
+
+    if plot_data.empty:
+        raise ValueError(
+            "Cannot plot an empty prediction dataframe."
+        )
+
+    # Use a representative high-activity 24-hour window where possible.
+    window_size = min(1440, len(plot_data))
+
+    if len(plot_data) > window_size:
+        actual_energy_window = (
+            plot_data["actual_washing_machine_w"]
+            .rolling(
+                window=window_size,
+                min_periods=window_size,
+            )
+            .sum()
+        )
+
+        end_position = int(actual_energy_window.idxmax())
+        start_position = end_position - window_size + 1
+
+        sample = plot_data.iloc[
+            start_position:end_position + 1
+        ].copy()
+
+    else:
+        sample = plot_data.copy()
+
+    fig, ax = plt.subplots(figsize=(15, 5))
+
+    # Plot predictions first.
+    ax.plot(
+        sample["timestamp"],
+        sample["predicted_washing_machine_w"],
+        label=f"Predicted ({model_name})",
+        color="darkorange",
+        linewidth=1.1,
+        alpha=0.8,
+        zorder=2,
+    )
+
+    # Plot actual values on top so the actual trace is not hidden.
+    ax.plot(
+        sample["timestamp"],
+        sample["actual_washing_machine_w"],
+        label="Actual",
+        color="royalblue",
+        linewidth=1.25,
+        alpha=0.95,
+        zorder=3,
+    )
+
+    ax.set_title(
+        "Washing-machine Disaggregation: Actual vs Predicted "
+        "(Representative 24-hour Test Window)"
+    )
+
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Power (W)")
+
+    ax.legend()
+    ax.grid(True, alpha=0.2)
+
+    fig.autofmt_xdate()
+    fig.tight_layout()
+
+    fig.savefig(
+        output_path,
+        dpi=180,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+
 def train_evaluate(
     df: pd.DataFrame,
     features: pd.DataFrame,
     target_col: str,
     output_dir: str | Path,
     test_fraction: float = 0.2,
-):
-    """Train and compare baseline, Random Forest, LightGBM and two-stage RF."""
+) -> tuple[pd.DataFrame, dict]:
+    """
+    Train and compare:
 
-    print("Preparing model data...", flush=True)
+      1. Always-off baseline
+      2. Single-stage Random Forest
+      3. LightGBM (when installed)
+      4. Two-stage Random Forest
 
+    The final test period is chronological and is not used for
+    threshold tuning.
+
+    Returns the selected model's test predictions and metrics.
+    """
+
+    if not 0 < test_fraction < 1:
+        raise ValueError(
+            "test_fraction must be between 0 and 1."
+        )
+
+    if target_col not in df.columns:
+        raise KeyError(
+            f"Target column '{target_col}' was not found in df."
+        )
+
+    if features.empty:
+        raise ValueError(
+            "The feature dataframe is empty."
+        )
+
+    # Prepare target as a timestamp-indexed series.
     target_data = (
-        df.sort_values("timestamp")
+        df.copy()
+        .assign(
+            timestamp=pd.to_datetime(
+                df["timestamp"],
+                errors="coerce",
+            )
+        )
+        .dropna(subset=["timestamp"])
+        .sort_values("timestamp")
         .drop_duplicates("timestamp", keep="last")
         .set_index("timestamp")
     )
@@ -162,36 +304,54 @@ def train_evaluate(
         errors="coerce",
     ).clip(lower=0)
 
-    data = features.join(y.rename("target"), how="inner")
+    y.name = "target"
 
-    # Missing targets and missing features are excluded, never converted to zero.
+    # Features are expected to have a DatetimeIndex.
+    X = features.copy()
+
+    X.index = pd.to_datetime(
+        X.index,
+        errors="coerce",
+    )
+
+    X = X.loc[~X.index.isna()]
+    X = X.sort_index()
+    X = X.loc[~X.index.duplicated(keep="last")]
+
+    data = X.join(y, how="inner")
+
     data = (
-        data.replace([np.inf, -np.inf], np.nan)
+        data
+        .replace([np.inf, -np.inf], np.nan)
         .dropna()
         .sort_index()
     )
 
     if data.empty:
-        raise ValueError("No valid observations remain after alignment.")
+        raise ValueError(
+            "No valid observations remain after aligning features "
+            "and target. Check that features use a timestamp index "
+            "matching df['timestamp']."
+        )
 
+    # Chronological outer holdout.
     split = int(len(data) * (1 - test_fraction))
 
     train = data.iloc[:split]
     test = data.iloc[split:]
 
     if len(train) < 200 or len(test) < 20:
-        raise ValueError("Insufficient data for chronological split.")
+        raise ValueError(
+            "Insufficient data for the chronological train/test split."
+        )
 
-    X_train = train[features.columns]
+    feature_columns = list(features.columns)
+
+    X_train = train[feature_columns]
     y_train = train["target"]
 
-    X_test = test[features.columns]
+    X_test = test[feature_columns]
     y_test = test["target"]
-
-    print(
-        f"Training rows: {len(train):,} | Test rows: {len(test):,}",
-        flush=True,
-    )
 
     result = {
         "split": {
@@ -206,35 +366,57 @@ def train_evaluate(
     }
 
     model_predictions = {}
+    metric_keys = {}
 
-    # Always-off baseline
-    print("Evaluating always-off baseline...", flush=True)
+    # ---------------------------------------------------------
+    # 1. Always-off baseline
+    # ---------------------------------------------------------
 
-    baseline = DummyRegressor(strategy="constant", constant=0.0)
+    baseline = DummyRegressor(
+        strategy="constant",
+        constant=0.0,
+    )
+
     baseline.fit(X_train, y_train)
 
-    pred_base = baseline.predict(X_test)
+    result["baseline_always_off"] = metrics(
+        y_test,
+        baseline.predict(X_test),
+    )
 
-    result["baseline_always_off"] = metrics(y_test, pred_base)
+    # ---------------------------------------------------------
+    # 2. Single-stage Random Forest
+    # ---------------------------------------------------------
 
-    # Single-stage Random Forest
-    print("Training Random Forest regression...", flush=True)
+    random_forest = make_regressor()
 
-    rf = make_regressor(n_estimators=50)
-    rf.fit(X_train, y_train)
+    random_forest.fit(
+        X_train,
+        y_train,
+    )
 
-    pred_rf = np.clip(rf.predict(X_test), 0, None)
+    pred_rf = np.clip(
+        random_forest.predict(X_test),
+        0,
+        None,
+    )
 
-    result["random_forest"] = metrics(y_test, pred_rf)
+    result["random_forest"] = metrics(
+        y_test,
+        pred_rf,
+    )
+
     model_predictions["Random Forest"] = pred_rf
+    metric_keys["Random Forest"] = "random_forest"
 
-    # LightGBM
+    # ---------------------------------------------------------
+    # 3. LightGBM
+    # ---------------------------------------------------------
+
     try:
         from lightgbm import LGBMRegressor
 
-        print("Training LightGBM...", flush=True)
-
-        lgbm = LGBMRegressor(
+        lightgbm = LGBMRegressor(
             n_estimators=200,
             learning_rate=0.04,
             num_leaves=31,
@@ -242,21 +424,37 @@ def train_evaluate(
             subsample=0.85,
             colsample_bytree=0.85,
             random_state=42,
-            n_jobs=-1,
             verbosity=-1,
+            n_jobs=-1,
         )
 
-        lgbm.fit(X_train, y_train)
-        pred_lgbm = np.clip(lgbm.predict(X_test), 0, None)
+        lightgbm.fit(
+            X_train,
+            y_train,
+        )
 
-        result["lightgbm"] = metrics(y_test, pred_lgbm)
+        pred_lgbm = np.clip(
+            lightgbm.predict(X_test),
+            0,
+            None,
+        )
+
+        result["lightgbm"] = metrics(
+            y_test,
+            pred_lgbm,
+        )
+
         model_predictions["LightGBM"] = pred_lgbm
+        metric_keys["LightGBM"] = "lightgbm"
 
     except ImportError:
-        result["lightgbm"] = "Skipped: LightGBM is not installed."
+        result["lightgbm"] = (
+            "Skipped: LightGBM is not installed."
+        )
 
-    # Threshold selection
-    print("Selecting activity threshold...", flush=True)
+    # ---------------------------------------------------------
+    # 4. Two-stage Random Forest
+    # ---------------------------------------------------------
 
     selected_threshold, tuning_df = select_activity_threshold(
         X_train,
@@ -266,44 +464,60 @@ def train_evaluate(
     )
 
     result["threshold_selection"] = {
-        "method": "Internal chronological validation; highest validation F1",
+        "method": (
+            "Internal chronological validation; highest validation F1"
+        ),
         "candidate_thresholds_w": CANDIDATE_THRESHOLDS_W,
         "selected_threshold_w": selected_threshold,
         "validation_fraction_of_outer_training_data": 0.2,
     }
 
-    # Two-stage Random Forest
-    print("Training two-stage activity classifier...", flush=True)
+    y_train_active = (
+        y_train >= selected_threshold
+    ).astype(int)
 
-    y_train_active = (y_train >= selected_threshold).astype(int)
-    y_test_active = (y_test >= selected_threshold).astype(int)
+    y_test_active = (
+        y_test >= selected_threshold
+    ).astype(int)
 
     if y_train_active.nunique() != 2:
         raise ValueError(
-            "Selected threshold produced only one training class."
+            "Selected threshold produced only one activity class "
+            "in training."
         )
 
-    classifier = make_classifier(n_estimators=50)
-    classifier.fit(X_train, y_train_active)
+    classifier = make_classifier()
+
+    classifier.fit(
+        X_train,
+        y_train_active,
+    )
 
     pred_active = classifier.predict(X_test)
 
-    print("Training active-power regressor...", flush=True)
-
+    # Train power regressor only on active training observations.
     active_mask = y_train >= selected_threshold
 
     if int(active_mask.sum()) < 100:
-        raise ValueError("Insufficient active observations for power regression.")
+        raise ValueError(
+            "Insufficient active training observations "
+            "for power regression."
+        )
 
-    regressor = make_regressor(n_estimators=50)
+    active_regressor = make_regressor()
 
-    regressor.fit(
+    active_regressor.fit(
         X_train.loc[active_mask],
         y_train.loc[active_mask],
     )
 
-    estimated_power = np.clip(regressor.predict(X_test), 0, None)
+    estimated_power = np.clip(
+        active_regressor.predict(X_test),
+        0,
+        None,
+    )
 
+    # If classifier predicts OFF, estimated appliance power is zero.
     pred_two_stage = np.where(
         pred_active == 1,
         estimated_power,
@@ -317,105 +531,108 @@ def train_evaluate(
 
     result["two_stage_activity_detection"] = {
         "precision": float(
-            precision_score(y_test_active, pred_active, zero_division=0)
+            precision_score(
+                y_test_active,
+                pred_active,
+                zero_division=0,
+            )
         ),
         "recall": float(
-            recall_score(y_test_active, pred_active, zero_division=0)
+            recall_score(
+                y_test_active,
+                pred_active,
+                zero_division=0,
+            )
         ),
         "f1_score": float(
-            f1_score(y_test_active, pred_active, zero_division=0)
+            f1_score(
+                y_test_active,
+                pred_active,
+                zero_division=0,
+            )
         ),
-        "actual_active_minutes": int(y_test_active.sum()),
-        "predicted_active_minutes": int(pred_active.sum()),
+        "actual_active_minutes": int(
+            y_test_active.sum()
+        ),
+        "predicted_active_minutes": int(
+            pred_active.sum()
+        ),
     }
 
     model_predictions["Two-stage Random Forest"] = pred_two_stage
+    metric_keys["Two-stage Random Forest"] = (
+        "two_stage_random_forest"
+    )
 
-    # Select best model by energy estimation error
-    metric_keys = {
-        "Random Forest": "random_forest",
-        "LightGBM": "lightgbm",
-        "Two-stage Random Forest": "two_stage_random_forest",
-    }
+    # ---------------------------------------------------------
+    # Select best ML model by total-energy estimation error
+    # ---------------------------------------------------------
 
     best_name = min(
         model_predictions,
-        key=lambda name: result[
-            metric_keys[name]
-        ]["absolute_energy_error_kWh"],
+        key=lambda name: result[metric_keys[name]][
+            "absolute_energy_error_kWh"
+        ],
     )
 
-    best_pred = model_predictions[best_name]
+    best_prediction = model_predictions[best_name]
 
     result["selected_model"] = best_name
+
     result["model_selection_criterion"] = (
-        "Lowest absolute total energy estimation error"
+        "Lowest absolute total energy estimation error among ML models"
     )
 
-    # Save outputs
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    # ---------------------------------------------------------
+    # Save predictions and evaluation outputs
+    # ---------------------------------------------------------
+
+    output_path = Path(output_dir)
+    output_path.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     predictions = pd.DataFrame({
         "timestamp": test.index,
-        "actual_washing_machine_w": y_test.values,
-        "predicted_washing_machine_w": best_pred,
+        "actual_washing_machine_w": y_test.to_numpy(),
+        "predicted_washing_machine_w": best_prediction,
     })
 
-    predictions.to_csv(out / "test_predictions.csv", index=False)
-    tuning_df.to_csv(out / "threshold_tuning.csv", index=False)
-
-    # Actual vs predicted plot
-    print("Saving evaluation plots and metrics...", flush=True)
-
-    fig, ax = plt.subplots(figsize=(12, 4))
-
-    sample = predictions.head(min(1500, len(predictions)))
-
-    ax.plot(
-        sample["timestamp"],
-        sample["actual_washing_machine_w"],
-        label="Actual",
-        linewidth=1,
+    predictions.to_csv(
+        output_path / "test_predictions.csv",
+        index=False,
     )
 
-    ax.plot(
-        sample["timestamp"],
-        sample["predicted_washing_machine_w"],
-        label=f"Predicted ({best_name})",
-        linewidth=1,
+    tuning_df.to_csv(
+        output_path / "threshold_tuning.csv",
+        index=False,
     )
 
-    ax.set_title(
-        "Washing-machine disaggregation: Actual vs Predicted"
+    # Generate the improved Actual vs Predicted graph.
+    plot_actual_vs_predicted(
+        predictions,
+        best_name,
+        output_path / "actual_vs_predicted.png",
     )
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Power (W)")
-    ax.legend()
 
-    fig.tight_layout()
-    fig.savefig(out / "actual_vs_predicted.png", dpi=150)
-    plt.close(fig)
+    # Save model comparison, including the always-off baseline.
+    comparison_rows = []
 
-    # Model comparison
-    comparison = []
-
-    for name in model_predictions:
-        comparison.append({
-            "model": name,
-            **result[metric_keys[name]],
+    for model_name in model_predictions:
+        comparison_rows.append({
+            "model": model_name,
+            **result[metric_keys[model_name]],
         })
 
-    comparison.append({
+    comparison_rows.append({
         "model": "Always-off baseline",
         **result["baseline_always_off"],
     })
 
-    pd.DataFrame(comparison).to_csv(
-        out / "model_comparison.csv",
+    pd.DataFrame(comparison_rows).to_csv(
+        output_path / "model_comparison.csv",
         index=False,
     )
-
-    print("Model training and evaluation completed.", flush=True)
 
     return predictions, result
