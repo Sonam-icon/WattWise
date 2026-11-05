@@ -1,0 +1,19 @@
+# Datasets - do not upload
+/data/Raw/
+/data/Cleaned/
+
+# Generated outputs - visualizations are copied to docs/assets
+/outputs/
+
+# Python environment and cache
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Secrets
+.env
+
+# Archives
+*.7z

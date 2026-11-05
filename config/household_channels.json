@@ -1,0 +1,19 @@
+{
+  "2": {
+    "aggregate": "Aggregate",
+    "washing_machine": "Appliance2"
+  },
+  "3": {
+    "aggregate": "Aggregate",
+    "washing_machine": "Appliance6"
+  },
+  "5": {
+    "aggregate": "Aggregate",
+    "washing_machine": "Appliance3",
+    "model_house": 5
+  },
+  "6": {
+    "aggregate": "Aggregate",
+    "washing_machine": "Appliance2"
+  }
+}
