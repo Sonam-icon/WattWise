@@ -136,8 +136,8 @@ The following plot compares washing-machine cycle characteristics across Houses 
 
 ## 6. Actual vs Predicted Washing-Machine Power
 
-The following plot compares actual washing-machine power with predictions from the Two-stage Random Forest model on the chronological test set for House 5.
+The following plot compares actual washing-machine power with predictions from the Two-stage Random Forest model on the chronological test set for House 5. It shows a representative test window containing multiple washing-machine operating events.
 
-![Actual versus predicted power](docs/assets/actual_vs_predicted.png)
+![Actual versus predicted washing-machine power](docs/assets/actual_vs_predicted.png)
 
-The model captures some high-power events but does not accurately reconstruct every individual power peak. Despite this limitation, its total energy estimate is relatively close to actual consumption, with an absolute error of 3.76 kWh (4.39%).
+The model captures some washing-machine operating events but does not consistently reconstruct the actual power profile. It underestimates several high-power peaks and produces false activity predictions during some periods when actual washing-machine consumption is close to zero. Although its point-wise predictions remain imperfect, its total estimated energy is relatively close to actual consumption, with an absolute error of 3.76 kWh (4.39%). This highlights the difference between estimating total energy accurately and reconstructing individual appliance power readings accurately.
