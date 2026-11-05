@@ -93,30 +93,33 @@ separate for final evaluation.
 The two-stage Random Forest produced the lowest absolute total-energy
 estimation error among the evaluated machine-learning models. On the
 House 5 test period, the measured washing-machine energy was
-approximately **85.59 kWh**, while the model estimated approximately
-**89.35 kWh**. This corresponds to an absolute error of approximately
-**3.76 kWh**, or **4.39%**.
+**85.59 kWh**, while the model estimated **75.58 kWh**. This gives an
+absolute error of **10.01 kWh**, or approximately **11.69%** of actual
+test energy.
 
-That result needs to be considered alongside the other metrics. Random
-Forest achieved lower MAE and RMSE than the other machine-learning
-models. The always-off baseline also had a lower MAE than the
-machine-learning models because many one-minute washing-machine readings
-were zero. However, the always-off baseline estimated no washing-machine
-energy at all.
+The other metrics tell a slightly different story. Random Forest had
+the lowest MAE and RMSE among the trained machine-learning models
+(MAE **34.51 W**, RMSE **159.59 W**). The always-off baseline had an
+even lower MAE (**32.09 W**) because many one-minute washing-machine
+readings were zero, but it estimated no washing-machine energy at all.
+The two-stage model was selected specifically because its total-energy
+error was the lowest among the machine-learning models, not because it
+performed best on every metric.
 
-I selected the two-stage Random Forest on the basis of total-energy
-estimation error, not because it was best on every metric. Its activity
-detection was still imperfect: test precision was approximately
-**0.508**, recall was approximately **0.495**, and F1-score was
-approximately **0.501**. The model also under-estimated or missed some
-high-power events. These results show the difficulty of recovering an
-individual appliance's behaviour from aggregate household consumption,
-particularly when appliance activity is sparse and different loads can
-overlap.
+Its activity detection was still imperfect. On the test set, precision
+was **0.553**, recall was **0.436**, and F1-score was **0.487**. It
+predicted **13,831 active minutes**, compared with **17,565** actual
+active minutes under the 5 W definition. This shows that the model
+missed a portion of the active minutes, even though its total-energy
+estimate was closer than the other approaches. The results highlight
+the difficulty of recovering an individual appliance's behaviour from
+aggregate household consumption, particularly when appliance activity
+is sparse and different loads can overlap.
 
-The detailed metrics, figures and examples of model errors are available
-in [RESULTS.md](RESULTS.md). The recommendations arising from the
-analysis are in [Recommendation.md](Recommendation.md).
+The detailed metrics, threshold comparison, figures and examples of
+model errors are available in [RESULTS.md](RESULTS.md). The
+recommendations arising from the analysis are in
+[Recommendation.md](Recommendation.md).
 
 ## Main limitations and what I would improve next
 

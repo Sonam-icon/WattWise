@@ -32,9 +32,11 @@ The mapping is household-specific. House 5's `Appliance3` is identified as the w
 
 ## House 1 raw-data inspection
 
-The inspected House 1 raw data contained 8,518,763 rows, spanning 2013-10-09 14:06:17 to 2015-07-10 11:56:32. The timestamp parse produced zero invalid timestamps. There were 761,551 duplicate timestamp rows; keeping the last record left 7,757,212 rows. The median observed interval was 7 seconds. A total of 3,581,302 intervals differed from the median by more than the 2-second tolerance, and 1,040,974 intervals exceeded 1.5 times the median interval. No negative readings were reported in this inspection. High readings above 4,000 W were flagged for review rather than automatically removed.
+The inspected House 1 raw data contained **8,518,763 rows**, spanning 2013-10-09 14:06:17 to 2015-07-10 11:56:32. The timestamp parse produced zero invalid timestamps. There were **761,551 duplicate timestamp rows**; keeping the last record left **7,757,212 rows**. The median observed interval was **7 seconds**. A total of **3,581,302 intervals** differed from the median by more than the 2-second tolerance, and **1,040,974 intervals** were classified as long gaps. These interval counts describe the timestamp inspection and are not necessarily independent faults.
 
-After one-minute resampling, the series contained 920,031 minute rows. The report recorded 211,943 rows with at least one channel missing and 113,161 rows with all power channels missing. Short internal gaps of up to three consecutive minutes were eligible for interpolation; longer gaps and boundary gaps remained missing.
+No negative readings were found in any power column. Readings above the **4,000 W** investigation threshold were flagged, not automatically removed. The flagged counts were: Aggregate **41,054**, Appliance1 **846**, Appliance2 **40**, Appliance3 **118**, Appliance4 **2,085**, Appliance5 **221**, Appliance6 **36**, Appliance7 **374**, Appliance8 **179** and Appliance9 **50**. The maximum observed values ranged from 29,159 W for Aggregate to 98,301 W among the appliance channels.
+
+After one-minute resampling, the series contained **920,031 minute rows**. Before interpolation, missing counts ranged from **115,121** (Appliance7) to **212,969** (Appliance9). I interpolated only complete internal gaps of up to three consecutive missing minutes. Longer gaps and boundary gaps remained missing. After this short-gap fill, **215,381 timestamps** still had at least one missing power channel, and **114,382 timestamps** had all power channels missing. The `Unix` column was excluded from power resampling because it is a timestamp-related field, not a power measurement.
 
 ## One-minute washing-machine data quality
 

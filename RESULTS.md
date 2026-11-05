@@ -17,15 +17,19 @@ The House 1 cleaning workflow applies the following steps:
 3. Resample numeric power channels to a one-minute frequency using the mean within each minute.
 4. Treat negative power readings as invalid and mask them rather than interpreting them as consumption.
 5. Interpolate only short internal gaps, up to three consecutive one-minute intervals. Longer gaps and gaps at the beginning or end of a series remain missing.
-6. Retain and inspect unusually high readings rather than automatically deleting every high value. Extreme values require investigation against the source and channel context before being classified as errors.
+6. Retain and inspect unusually high readings rather than automatically deleting every high value. I flagged readings above **4,000 W** for investigation; the threshold is a review rule, not an automatic deletion rule.
 
-After one-minute resampling, the House 1 dataset contained **920,031 rows**. At least one channel was missing in **211,943** rows, and all power channels were missing in **113,161** rows. Missing values are not automatically converted to zero because an unobserved reading is not evidence of zero consumption.
+I kept the last record when duplicate timestamps occurred. Negative power readings were replaced with missing values. For resampling, I used the one-minute mean of available power readings and excluded the `Unix` field because it is timestamp-related rather than a power measurement.
+
+After duplicate removal, **7,757,212 rows** remained. No negative readings were found in any of the ten power columns. Readings above the configured **4,000 W** threshold were flagged for investigation rather than removed: the aggregate channel had **41,054** such readings, while the appliance channels had between **36 and 2,085** each.
+
+After one-minute resampling, the House 1 dataset contained **920,031 rows**. Before short-gap interpolation, missing counts ranged from **115,121** in Appliance7 to **212,969** in Appliance9. Interpolation reduced these counts, but missing values remained: there were **215,381 timestamps with at least one power channel missing**, including **114,382 timestamps where all power channels were missing**. Missing values are not automatically converted to zero because an unobserved reading is not evidence of zero consumption.
 
 ### Before-and-after comparison
 
 The figure below compares the raw readings with the cleaned one-minute readings for the aggregate channel and two appliance channels (Appliance1 and Appliance2). The same channel is shown before and after cleaning so that changes in sampling frequency, gaps and extreme readings can be inspected.
 
-![House 1 aggregate and appliance channels before and after cleaning](docs/assets/house1_before_after.png)
+![House 1 aggregate and appliance channels before and after cleaning](docs/assets/house_1_before_after.png)
 
 The cleaned series is a one-minute representation of the source readings, not a guarantee that every remaining extreme value is valid. The plots show that large peaks remain in some channels after resampling. These should be treated as flagged observations for further source-level investigation, not silently removed or described as corrected unless the cleaning code explicitly removes them.
 
@@ -36,20 +40,20 @@ Resampling standardises the time axis and makes the data suitable for minute-lev
 ---
 
 ## 2. Washing-machine EDA
-The EDA uses one-minute cleaned REFIT data from Houses ****2, 3, 5 and 6****. Their respective periods are:
+The EDA uses one-minute cleaned REFIT data from Houses **2, 3, 5 and 6**. Their respective periods are:
 
-- ****House 2:**** 2013-09-17 22:08 to 2015-05-28 08:05
+- **House 2:** 2013-09-17 22:08 to 2015-05-28 08:05
 
-- ****House 3:**** 2013-09-25 19:21 to 2015-06-02 10:55
+- **House 3:** 2013-09-25 19:21 to 2015-06-02 10:55
 
-- ****House 5:**** 2013-09-26 09:56 to 2015-07-06 17:48
+- **House 5:** 2013-09-26 09:56 to 2015-07-06 17:48
 
-- ****House 6:**** 2013-11-28 12:15 to 2015-06-28 22:14
+- **House 6:** 2013-11-28 12:15 to 2015-06-28 22:14
 
 The household-specific washing-machine channel mapping and missing-data quality report are documented in [DATA.md](DATA.md).
 
 ### Event definition
-A washing-machine reading of at least ****5 W**** is considered active. A detected event must contain at least ****5 consecutive active minutes****. Off-gaps of up to ****3 minutes**** are merged when they occur within a continuous known-data segment. Missing observations break an event and are not treated as zero. This simple rule suppresses very short isolated readings and joins brief interruptions, while remaining easy to explain. The resulting events are operationally detected usage events, not confirmed physical wash programmes. The event counts depend on these chosen parameters.
+A washing-machine reading of at least **5 W** is considered active. A detected event must contain at least **5 consecutive active minutes**. Off-gaps of up to **3 minutes** are merged when they occur within a continuous known-data segment. Missing observations break an event and are not treated as zero. This simple rule suppresses very short isolated readings and joins brief interruptions, while remaining easy to explain. The resulting events are operationally detected usage events, not confirmed physical wash programmes. The event counts depend on these chosen parameters.
 
 ### Cross-house results
 | House | Missing washing-machine data | Off time among valid readings | Detected events | Median duration | Median energy per event |
@@ -71,7 +75,7 @@ The pipeline generates hourly and day-of-week usage profiles, weekday-versus-wee
 
 ## 3. Washing-machine disaggregation
 ### Scope and split
-The model experiment uses ****House 5****, with household aggregate power as the input and its washing-machine (\`Appliance3\`) power as the target. Both are at one-minute resolution. The full available series spans 2013-09-26 09:56 to 2015-07-06 17:48.
+The model experiment uses **House 5**, with household aggregate power as the input and its washing-machine (\`Appliance3\`) power as the target. Both are at one-minute resolution. The full available series spans 2013-09-26 09:56 to 2015-07-06 17:48.
 
 A chronological holdout was used:
 
@@ -98,7 +102,18 @@ The evaluated approaches were:
 
 - Two-stage Random Forest: an activity classifier followed by a power regressor for predicted-active observations.
 
-The activity threshold was selected from 5, 10, 20 and 30 W using the highest F1-score on internal chronological validation. ****5 W**** was selected. This threshold defines the operational activity label; it is not independently verified physical ON/OFF ground truth.
+The activity threshold was selected from 5, 10, 20 and 30 W using the highest F1-score on internal chronological validation. **5 W** was selected. This threshold defines the operational activity label; it is not independently verified physical ON/OFF ground truth.
+
+The validation results for the candidate thresholds were:
+
+| Threshold (W) | Precision | Recall | F1-score |
+|---:|---:|---:|---:|
+| 5 | 0.337 | 0.451 | 0.386 |
+| 10 | 0.308 | 0.452 | 0.367 |
+| 20 | 0.304 | 0.488 | 0.375 |
+| 30 | 0.281 | 0.470 | 0.352 |
+
+I selected **5 W** because it gave the highest validation F1-score (**0.386**) among the four candidates. These are internal validation metrics; the test-set activity metrics reported below are a separate final evaluation.
 
 ### Test-set model comparison
 | Model | MAE (W) ↓ | RMSE (W) ↓ | Actual energy (kWh) | Predicted energy (kWh) | Absolute energy error (kWh) ↓ |
@@ -107,13 +122,13 @@ The activity threshold was selected from 5, 10, 20 and 30 W using the highest F1
 
 | Always-off baseline | 32.09 | 190.33 | 85.59 | 0.00 | 85.59 |
 
-| Random Forest | 34.59 | ****160.01**** | 85.59 | 52.83 | 32.76 |
+| Random Forest | 34.51 | 159.59 | 85.59 | 53.27 | 32.31 |
 
 | LightGBM | 37.28 | 162.29 | 85.59 | 46.07 | 39.52 |
 
-| Two-stage Random Forest | 38.46 | 172.01 | 85.59 | 89.35 | ****3.76**** |
+| Two-stage Random Forest | 35.45 | 168.28 | 85.59 | 75.58 | 10.01 |
 
-The two-stage Random Forest was selected because it has the smallest absolute total-energy estimation error. Its predicted energy is 89.35 kWh compared with 85.59 kWh actual, an absolute difference of 3.76 kWh (approximately ****4.39%**** of actual test energy). Random Forest has the lowest RMSE among the evaluated approaches and the lowest MAE among the trained machine-learning models. The always-off baseline has the lowest MAE overall because most one-minute observations are zero; however, it estimates no energy and has the largest total-energy error. Therefore, MAE alone would give a misleading impression of usefulness for this highly sparse target.
+The two-stage Random Forest was selected because it has the smallest absolute total-energy estimation error among the evaluated machine-learning models. It estimated **75.58 kWh** against **85.59 kWh** actual, giving an absolute difference of **10.01 kWh** (approximately **11.69%** of actual test energy). Random Forest had the lowest RMSE among the evaluated approaches and the lowest MAE among the trained machine-learning models. The always-off baseline had the lowest MAE overall because most one-minute observations were zero; however, it estimated no energy and had the largest total-energy error. Therefore, MAE alone would give a misleading impression of usefulness for this highly sparse target.
 
 ### Activity detection
 For the selected two-stage model on the test set:
@@ -122,17 +137,17 @@ For the selected two-stage model on the test set:
 
 |---|---:|
 
-| Precision | 0.508 |
+| Precision | 0.553 |
 
-| Recall | 0.495 |
+| Recall | 0.436 |
 
-| F1-score | 0.501 |
+| F1-score | 0.487 |
 
 | Actual active minutes (5 W threshold) | 17,565 |
 
-| Predicted active minutes | 17,135 |
+| Predicted active minutes | 13,831 |
 
-The model identifies activity with moderate performance. Precision indicates that approximately half of its predicted-active minutes are active under the chosen label definition; recall indicates that it detects approximately half of the actual active minutes. The validation threshold-tuning F1 values are separate from the final test F1 and should not be conflated.
+The model identifies activity with moderate performance. Precision of 0.553 means that a little over half of its predicted-active minutes were active under the chosen label definition. Recall of 0.436 means that it detected less than half of the actual active minutes. The validation threshold-tuning F1 values are separate from the final test F1 and should not be conflated.
 
 ### Actual-versus-predicted interpretation
 The generated \`actual_vs_predicted.png\` plot compares the actual washing-machine signal with the selected two-stage Random Forest on the test data. The displayed segment is dominated by zero/low-power periods and contains a small number of sharp operating events. The model captures some high-power activity but does not reproduce every event's timing and magnitude accurately. The plot is a segment-level illustration; the metrics above are calculated across the full 160,001-row test set.
@@ -184,4 +199,4 @@ The following plot compares actual washing-machine power with predictions from t
 
 ![Actual versus predicted washing-machine power](docs/assets/actual_vs_predicted.png)
 
-The model captures some washing-machine operating events but does not consistently reconstruct the actual power profile. It underestimates several high-power peaks and produces false activity predictions during some periods when actual washing-machine consumption is close to zero. Although its point-wise predictions remain imperfect, its total estimated energy is relatively close to actual consumption, with an absolute error of 3.76 kWh (4.39%). This highlights the difference between estimating total energy accurately and reconstructing individual appliance power readings accurately.
+The model captures some washing-machine operating events but does not consistently reconstruct the actual power profile. It underestimates several high-power peaks and produces false activity predictions during some periods when actual washing-machine consumption is close to zero. Although its point-wise predictions remain imperfect, its total estimated energy is relatively close to actual consumption, with an absolute error of 10.01 kWh (11.69%). This highlights the difference between estimating total energy accurately and reconstructing individual appliance power readings accurately.
