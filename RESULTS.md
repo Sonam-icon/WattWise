@@ -80,12 +80,9 @@ The model experiment uses **House 5**, with household aggregate power as the inp
 A chronological holdout was used:
 
 | Split | Rows | Period |
-
 |---|---:|---|
-
-| Training | 640,000 | 2013-09-26 10:11 to 2015-02-16 19:24 |
-
-| Test | 160,001 | 2015-02-16 19:25 to 2015-07-06 17:48 |
+| Training | 668,835 | 2013-09-26 10:11 to 2015-02-14 14:03 |
+| Test | 167,209 | 2015-02-14 14:04 to 2015-07-06 17:48 |
 
 This preserves temporal order: the test period occurs after the training period. It avoids randomly distributing adjacent/overlapping time observations between training and test sets. Candidate activity thresholds were selected using an internal chronological validation segment drawn from the outer training data; the final test period was not used for that selection.
 
@@ -117,40 +114,29 @@ I selected **5 W** because it gave the highest validation F1-score (**0.386**) a
 
 ### Test-set model comparison
 | Model | MAE (W) ↓ | RMSE (W) ↓ | Actual energy (kWh) | Predicted energy (kWh) | Absolute energy error (kWh) ↓ |
-
 |---|---:|---:|---:|---:|---:|
+| Always-off baseline | 40.23 | 218.46 | 112.10 | 0.00 | 112.10 |
+| Random Forest | 47.31 | 197.04 | 112.10 | 71.37 | 40.73 |
+| LightGBM | 49.14 | 196.41 | 112.10 | 65.21 | 46.90 |
+| Two-stage Random Forest | 45.92 | 202.59 | 112.10 | 81.79 | 30.31 |
 
-| Always-off baseline | 32.09 | 190.33 | 85.59 | 0.00 | 85.59 |
-
-| Random Forest | 34.51 | 159.59 | 85.59 | 53.27 | 32.31 |
-
-| LightGBM | 37.28 | 162.29 | 85.59 | 46.07 | 39.52 |
-
-| Two-stage Random Forest | 35.45 | 168.28 | 85.59 | 75.58 | 10.01 |
-
-The two-stage Random Forest was selected because it has the smallest absolute total-energy estimation error among the evaluated machine-learning models. It estimated **75.58 kWh** against **85.59 kWh** actual, giving an absolute difference of **10.01 kWh** (approximately **11.69%** of actual test energy). Random Forest had the lowest RMSE among the evaluated approaches and the lowest MAE among the trained machine-learning models. The always-off baseline had the lowest MAE overall because most one-minute observations were zero; however, it estimated no energy and had the largest total-energy error. Therefore, MAE alone would give a misleading impression of usefulness for this highly sparse target.
+The two-stage Random Forest was selected because it has the smallest absolute total-energy estimation error among the evaluated machine-learning models. It estimated **81.79 kWh** against **112.10 kWh** actual, giving an absolute difference of **30.31 kWh** (reducing the always-off baseline error of 112.10 kWh by **73.0%**). Random Forest and LightGBM achieved slightly lower RMSE (196.4–197.0 W), but higher energy errors (40.7–46.9 kWh). The always-off baseline had the lowest MAE overall (40.23 W) because over 91% of one-minute observations were zero; however, it estimated no energy and had the largest total-energy error (112.10 kWh). Therefore, MAE alone gives a misleading impression of usefulness for this highly sparse target.
 
 ### Activity detection
 For the selected two-stage model on the test set:
 
 | Metric | Result |
-
 |---|---:|
+| Precision | 0.566 |
+| Recall | 0.376 |
+| F1-score | 0.452 |
+| Actual active minutes (5 W threshold) | 19,996 |
+| Predicted active minutes | 13,305 |
 
-| Precision | 0.553 |
-
-| Recall | 0.436 |
-
-| F1-score | 0.487 |
-
-| Actual active minutes (5 W threshold) | 17,565 |
-
-| Predicted active minutes | 13,831 |
-
-The model identifies activity with moderate performance. Precision of 0.553 means that a little over half of its predicted-active minutes were active under the chosen label definition. Recall of 0.436 means that it detected less than half of the actual active minutes. The validation threshold-tuning F1 values are separate from the final test F1 and should not be conflated.
+The model identifies activity with moderate performance. Precision of 0.566 means that 56.6% of its predicted-active minutes were genuinely active under the chosen label definition. Recall of 0.376 means that it detected 37.6% of the actual active minutes, as low-power wash/rinse phases often blend into the household baseload. The validation threshold-tuning F1 values are separate from the final test F1 and should not be conflated.
 
 ### Actual-versus-predicted interpretation
-The generated \`actual_vs_predicted.png\` plot compares the actual washing-machine signal with the selected two-stage Random Forest on the test data. The displayed segment is dominated by zero/low-power periods and contains a small number of sharp operating events. The model captures some high-power activity but does not reproduce every event's timing and magnitude accurately. The plot is a segment-level illustration; the metrics above are calculated across the full 160,001-row test set.
+The generated `actual_vs_predicted.png` plot compares the actual washing-machine signal with the selected two-stage Random Forest on the test data. The displayed segment is dominated by zero/low-power periods and contains a small number of sharp operating events. The model captures some high-power activity but does not reproduce every event's timing and magnitude accurately. The plot is a segment-level illustration; the metrics above are calculated across the full 167,209-row test set.
 
 ### Failure cases and limitations
 1\. ****Missed or underestimated high-power events:**** some observed readings above 2,300 W are predicted substantially lower, and at least one of the largest observed events has a zero prediction. The model can therefore miss short or unusual operating phases.

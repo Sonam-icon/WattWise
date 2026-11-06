@@ -1,5 +1,6 @@
 
 from pathlib import Path
+
 import pandas as pd
 
 
@@ -48,7 +49,7 @@ def inspect_raw(
             ).sum()
         )
 
-        # Flag intervals substantially longer than normal.
+        # Flag intervals exceeding 1.5 times the median interval.
         long_gap_intervals = int(
             (interval_seconds > median_interval * 1.5).sum()
         )
@@ -70,11 +71,8 @@ def inspect_raw(
         ),
 
         "median_interval_seconds": median_interval,
-
         "interval_tolerance_seconds": interval_tolerance_seconds,
-
         "irregular_intervals": irregular_intervals,
-
         "long_gap_intervals": long_gap_intervals,
 
         "negative_readings_by_column": {
@@ -118,6 +116,63 @@ def count_missing_runs(series: pd.Series) -> int:
     )
 
 
+def interpolate_short_internal_gaps(
+    df: pd.DataFrame,
+    max_gap_minutes: int = 3
+) -> pd.DataFrame:
+    """
+    Interpolate only complete internal missing runs of up to
+    max_gap_minutes.
+
+    Longer gaps and boundary gaps remain missing.
+    """
+
+    result = df.copy()
+
+    for col in result.columns:
+        series = result[col].copy()
+        missing = series.isna().to_numpy()
+
+        i = 0
+
+        while i < len(series):
+
+            if not missing[i]:
+                i += 1
+                continue
+
+            # Start of a consecutive missing run.
+            start = i
+
+            while i < len(series) and missing[i]:
+                i += 1
+
+            end = i - 1
+            gap_length = end - start + 1
+
+            # Interpolate only if:
+            # 1. The complete gap is within the allowed length.
+            # 2. A valid observation exists before the gap.
+            # 3. A valid observation exists after the gap.
+            if (
+                gap_length <= max_gap_minutes
+                and start > 0
+                and i < len(series)
+            ):
+                local = series.iloc[start - 1:i + 1]
+
+                interpolated = local.interpolate(
+                    method="time"
+                )
+
+                result.iloc[
+                    start:i,
+                    result.columns.get_loc(col)
+                ] = interpolated.iloc[1:-1].to_numpy()
+
+    return result
+
+
 def clean_household_csv(
     raw: pd.DataFrame,
     output_path: str | Path,
@@ -133,8 +188,8 @@ def clean_household_csv(
     3. Remove duplicate timestamps, keeping the last record.
     4. Mask negative power readings.
     5. Resample power channels to one-minute mean values.
-    6. Interpolate only short internal gaps.
-    7. Retain longer gaps as missing values.
+    6. Interpolate only complete short internal gaps.
+    7. Retain longer gaps and boundary gaps as missing values.
     8. Save cleaned data and quality report.
     """
 
@@ -173,13 +228,11 @@ def clean_household_csv(
         resampled.isna().sum().astype(int).to_dict()
     )
 
-    # Interpolate only short internal gaps.
-    # Longer gaps and gaps at the beginning/end remain missing.
+    # Interpolate only complete short internal gaps.
     if short_gap_minutes > 0:
-        resampled = resampled.interpolate(
-            method="time",
-            limit=short_gap_minutes,
-            limit_area="inside"
+        resampled = interpolate_short_internal_gaps(
+            resampled,
+            max_gap_minutes=short_gap_minutes
         )
 
     # Missing readings remaining after interpolation.
@@ -249,8 +302,14 @@ def clean_household_csv(
         ),
 
         "extreme_readings_investigation_outputs": {
-            "analysis_csv": "outputs/cleaning/house_1_extreme_readings_analysis.csv",
-            "summary_json": "outputs/cleaning/house_1_extreme_readings_summary.json"
+            "analysis_csv": (
+                "outputs/cleaning/"
+                "house_1_extreme_readings_analysis.csv"
+            ),
+            "summary_json": (
+                "outputs/cleaning/"
+                "house_1_extreme_readings_summary.json"
+            )
         },
 
         "resampling": (
@@ -258,9 +317,9 @@ def clean_household_csv(
         ),
 
         "gap_rule": (
-            f"Time interpolation for up to {short_gap_minutes} "
-            "consecutive internal missing minutes; longer gaps "
-            "and boundary gaps remain missing"
+            f"Interpolate only complete internal gaps of up to "
+            f"{short_gap_minutes} consecutive missing minutes; "
+            "longer gaps and boundary gaps remain missing"
         ),
 
         "unix_column_rule": (

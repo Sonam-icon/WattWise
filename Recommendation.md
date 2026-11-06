@@ -30,14 +30,14 @@ Where possible, validate appliance estimates against temporary appliance sub-met
 
 **Potentially appropriate:** aggregate usage-pattern insights, identifying candidate households for an energy-advice pilot, and evaluating flexible-load engagement at group level.
 
-**Not appropriate without further validation:** appliance-level billing, enforcement, automatic appliance control, or definitive claims about an individual customer's washing-machine operation. Appliance signatures overlap, behaviour varies, and the tested model has only moderate minute-level activity detection (test F1 approximately 0.49) and was evaluated on one household.
+**Not appropriate without further validation:** appliance-level billing, enforcement, automatic appliance control, or definitive claims about an individual customer's washing-machine operation. Appliance signatures overlap, behaviour varies, and the tested model has only moderate minute-level activity detection (test F1 approximately 0.45) and was evaluated on one household.
 
 Use customer consent, data minimisation, clear explanations and an easy opt-out. Avoid exposing detailed household routines to parties that do not need them.
 
 ## Limitations and transferability
 
 - REFIT represents UK homes and should not be assumed representative of Indian households, tariffs, appliance models or usage habits.
-- The model was trained and evaluated on House 5; cross-house generalisation has not been demonstrated. Its two-stage approach reduced the total-energy error to 10.01 kWh (about 11.69%), but test activity detection remained moderate (precision 0.553, recall 0.436 and F1 0.487).
+- The model was trained and evaluated on House 5; cross-house generalisation has not been demonstrated. Its two-stage approach reduced the total-energy error from 112.10 kWh down to 30.31 kWh (a 73.0% error reduction compared to the always-off baseline), but test activity detection remained moderate (precision 0.566, recall 0.376 and F1 0.452).
 - The washing-machine channel has missing observations, and aggregate readings contain overlapping appliance loads.
 - The 5 W activity threshold and event-merging rule are practical analysis choices, not universal definitions of a wash cycle.
 - Estimated energy is not equivalent to a direct appliance sub-meter measurement.

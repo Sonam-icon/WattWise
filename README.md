@@ -93,26 +93,26 @@ separate for final evaluation.
 The two-stage Random Forest produced the lowest absolute total-energy
 estimation error among the evaluated machine-learning models. On the
 House 5 test period, the measured washing-machine energy was
-**85.59 kWh**, while the model estimated **75.58 kWh**. This gives an
-absolute error of **10.01 kWh**, or approximately **11.69%** of actual
-test energy.
+**112.10 kWh**, while the model estimated **81.79 kWh**. This gives an
+absolute error of **30.31 kWh** (a **73.0% error reduction** compared with
+the always-off baseline's 112.10 kWh error).
 
 The other metrics tell a slightly different story. Random Forest had
-the lowest MAE and RMSE among the trained machine-learning models
-(MAE **34.51 W**, RMSE **159.59 W**). The always-off baseline had an
-even lower MAE (**32.09 W**) because many one-minute washing-machine
-readings were zero, but it estimated no washing-machine energy at all.
+the lowest MAE among the trained machine-learning models (MAE **47.31 W**,
+RMSE **197.04 W**), and LightGBM had the lowest RMSE (**196.41 W**). The always-off
+baseline had an even lower MAE (**40.23 W**) because over 91% of one-minute
+washing-machine readings were zero, but it estimated zero washing-machine energy.
 The two-stage model was selected specifically because its total-energy
 error was the lowest among the machine-learning models, not because it
 performed best on every metric.
 
 Its activity detection was still imperfect. On the test set, precision
-was **0.553**, recall was **0.436**, and F1-score was **0.487**. It
-predicted **13,831 active minutes**, compared with **17,565** actual
+was **0.566**, recall was **0.376**, and F1-score was **0.452**. It
+predicted **13,305 active minutes**, compared with **19,996** actual
 active minutes under the 5 W definition. This shows that the model
-missed a portion of the active minutes, even though its total-energy
-estimate was closer than the other approaches. The results highlight
-the difficulty of recovering an individual appliance's behaviour from
+missed a portion of the active minutes (especially low-power tumbling/rinse phases),
+even though its total-energy estimate was significantly closer than the other approaches.
+The results highlight the difficulty of recovering an individual appliance's behaviour from
 aggregate household consumption, particularly when appliance activity
 is sparse and different loads can overlap.
 
