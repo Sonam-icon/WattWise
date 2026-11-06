@@ -243,6 +243,17 @@ repository focused on the code, documentation, configuration, metadata
 and selected figures rather than redistributing the REFIT measurement
 files.
 
+## Research guidance and literature grounding
+
+To design a robust, methodologically sound pipeline, I consulted foundational academic literature on the REFIT dataset and Non-Intrusive Load Monitoring (NILM):
+
+1. **Murray, D., Stankovic, L., & Stankovic, V. (2017).** *An electrical load measurements dataset of United Kingdom households from a two-year longitudinal study.* **Scientific Data**, 4, 160122.
+   - *Ideas adopted:* Consulted for understanding the REFIT data acquisition architecture, Individual Appliance Monitor (IAM) polling frequency, aggregate optical sensor characteristics, and the proper handling of the `Issues` column to mask unreliable submetered readings.
+2. **Kelly, J., & Knottenbelt, W. (2015).** *Neural NILM: Deep neural networks applied to energy disaggregation.* **ACM BuildSys**, 55–64.
+   - *Ideas adopted:* Adopted the standard 1-minute aggregation interval, power thresholding for appliance activation detection, and the necessity of chronological (time-based) holdout splits rather than random shuffling to prevent temporal data leakage.
+3. **Batra, N., Kelly, J., Parson, O., et al. (2014).** *NILMTK: An open source toolkit for non-intrusive load monitoring.* **ACM e-Energy**, 265–276.
+   - *Ideas adopted:* Adopted best practices in NILM evaluation metrics, specifically balancing point-in-time regression errors (MAE, RMSE) with total energy estimation error ($\Delta E$) and classification metrics (Precision, Recall, F1) to resolve the Sparsity Paradox.
+
 ## AI assistance
 
 I used ChatGPT as a development assistant to help interpret the

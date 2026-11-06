@@ -185,4 +185,12 @@ The following plot compares actual washing-machine power with predictions from t
 
 ![Actual versus predicted washing-machine power](docs/assets/actual_vs_predicted.png)
 
-The model captures some washing-machine operating events but does not consistently reconstruct the actual power profile. It underestimates several high-power peaks and produces false activity predictions during some periods when actual washing-machine consumption is close to zero. Although its point-wise predictions remain imperfect, its total estimated energy is relatively close to actual consumption, with an absolute error of 10.01 kWh (11.69%). This highlights the difference between estimating total energy accurately and reconstructing individual appliance power readings accurately.
+The model captures some washing-machine operating events but does not consistently reconstruct the actual power profile. It underestimates several high-power peaks and produces false activity predictions during some periods when actual washing-machine consumption is close to zero. Although its point-wise predictions remain imperfect, its total estimated energy is relatively close to actual consumption, with an absolute error of 30.31 kWh (reducing the always-off baseline error of 112.10 kWh by 73.0%). This highlights the difference between estimating total energy accurately and reconstructing individual appliance power readings accurately.
+
+---
+
+## 6. References & Research Grounding
+
+1. **Murray, D., Stankovic, L., & Stankovic, V. (2017).** *An electrical load measurements dataset of United Kingdom households from a two-year longitudinal study.* **Scientific Data**, 4, 160122.
+2. **Kelly, J., & Knottenbelt, W. (2015).** *Neural NILM: Deep neural networks applied to energy disaggregation.* **ACM BuildSys**, 55–64.
+3. **Batra, N., Kelly, J., Parson, O., et al. (2014).** *NILMTK: An open source toolkit for non-intrusive load monitoring.* **ACM e-Energy**, 265–276.
