@@ -32,19 +32,30 @@ def download(url: str, destination: Path) -> None:
                     f.write(chunk)
                     bar.update(len(chunk))
 
-def extract_households(archive: Path, output_dir: Path, houses: list[int]) -> None:
+def extract_households(archive: Path, output_dir: Path, houses: list[int], kind: str = "cleaned") -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    wanted = {f"house_{h}.csv" for h in houses} | {f"house{h}.csv" for h in houses}
     with py7zr.SevenZipFile(archive, mode="r") as z:
         names = z.getnames()
-        selected = [
-            n for n in names
-            if Path(n).name.lower() in wanted
-        ]
+        selected = []
+        for n in names:
+            fname = Path(n).name.lower()
+            if not fname.endswith(".csv"):
+                continue
+            for h in houses:
+                if kind == "raw":
+                    if f"raw_house{h}_part" in fname or f"raw_house_{h}_part" in fname or fname in {f"raw_house{h}.csv", f"raw_house_{h}.csv"}:
+                        selected.append(n)
+                else:
+                    if fname in {
+                        f"clean_house{h}.csv", f"clean_house_{h}.csv",
+                        f"house{h}.csv", f"house_{h}.csv"
+                    } or fname.startswith(f"clean_house{h}_") or fname.startswith(f"clean_house_{h}_"):
+                        selected.append(n)
+        selected = sorted(set(selected))
         if not selected:
             candidates = [Path(n).name for n in names if n.lower().endswith(".csv")]
             raise FileNotFoundError(
-                f"No target household CSV found in {archive.name}. "
+                f"No target household CSV found in {archive.name} for houses {houses} ({kind}). "
                 f"CSV examples in archive: {candidates[:20]}"
             )
         print("Extracting:", *selected, sep="\n  ")
@@ -53,7 +64,7 @@ def extract_households(archive: Path, output_dir: Path, houses: list[int]) -> No
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--raw-houses", nargs="+", type=int, default=[1])
-    p.add_argument("--clean-houses", nargs="+", type=int, default=[1, 2, 3, 5])
+    p.add_argument("--clean-houses", nargs="+", type=int, default=[2, 3, 5, 6])
     p.add_argument("--keep-archives", action="store_true")
     args = p.parse_args()
     base = Path(__file__).resolve().parent
@@ -61,7 +72,7 @@ def main():
     for kind, houses in (("raw", args.raw_houses), ("cleaned", args.clean_houses)):
         archive = archive_dir / f"REFIT_{kind}.7z"
         download(URLS[kind], archive)
-        extract_households(archive, base / "data" / kind, houses)
+        extract_households(archive, base / "data" / kind.capitalize(), houses, kind=kind)
         if not args.keep_archives:
             archive.unlink(missing_ok=True)
     print("Dataset extraction complete. Verify filenames and channel mappings before analysis.")

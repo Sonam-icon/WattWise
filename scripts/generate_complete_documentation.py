@@ -47,7 +47,7 @@ WattWise is an end-to-end data science and machine learning pipeline developed t
 ### What WattWise Actually Implements:
 1. **Raw Telemetry Ingestion & Cleaning (`src/clean.py`):** Ingests 8.52 million raw sensor observations from House 1, resolves 761,551 duplicate timestamps, performs interval irregularity audits, resamples to uniform 1-minute intervals (920,031 rows), and applies a strictly conservative gap interpolation policy (interpolating only complete internal gaps $\\le 3$ minutes while preserving true grid outages as missing `NaN` values).
 2. **Extreme Value Forensics (`scripts/investigate_extreme_readings.py`):** Flags 45,003 raw readings exceeding 4,000 W and investigates sensor corruption, discovering that 99.39% of appliance extremes represent physical Kirchhoff violations ($P_{app} > P_{agg}$), driven by digital framing errors (e.g., $98,301\\text{ W} = 0x17FFD$) and integer overflow sentinels ($65,535\\text{ W} = 0xFFFF$).
-3. **Multi-Household Behavioral Profiling (`src/eda.py`):** Evaluates one-minute washing machine operation across four UK homes (Houses 2, 3, 5, 6), revealing striking behavioural divergence (median cycle durations ranging from 40 to 98 minutes, and energy consumption per cycle from 0.23 to 0.58 kWh).
+3. **Multi-Household Behavioral Profiling (`src/eda.py`):** Evaluates one-minute washing machine operation across four UK homes (Houses 2, 3, 5, 6), revealing striking behavioural divergence (median cycle durations ranging from 28 to 98 minutes, and energy consumption per cycle from 0.12 to 0.58 kWh).
 4. **NILM Disaggregation Modeling (`src/features.py`, `src/model.py`):** Engineers 28 aggregate-only historical lag, rolling-window, and cyclical time features. Benchmarks an Always-Off baseline against Random Forest, LightGBM, and a specialized Two-Stage Random Forest (activity classifier + power regressor) evaluated on a strict chronological holdout of 167,209 minutes (House 5).
 5. **Resolving the NILM Sparsity Paradox:** Demonstrates mathematically why point-in-time metrics like Mean Absolute Error (MAE) are fundamentally deceptive for sparse electrical loads (~91% inactive time), and proves how the Two-Stage Random Forest achieves a **73.0% reduction in total energy estimation error** (30.31 kWh error vs. 112.10 kWh for the baseline).
 6. **Utility Demand-Side Management Strategy (`Recommendation.md`):** Translates model estimates into actionable utility recommendations for Time-of-Use (ToU) load shifting, specifies a 1,000-home Randomized Controlled Trial (RCT) pilot framework, and rigorously evaluates transferability barriers to the Indian power grid.
@@ -134,14 +134,14 @@ Below are the exact metrics computed across all four EDA households at 1-minute 
 
 | House | Start Date | End Date | 1-Min Rows | Missing Aggregate | Missing Appliance | Source `Issues==1` | Inactive % | Total Cycles | Median Duration | Median Energy/Cycle |
 |:---:|:---:|:---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| **2** | 2013-09-17 22:08 | 2015-05-28 08:05 | 889,078 | 218,914 (24.62%) | 219,633 (24.70%) | 28,444 (0.50%) | 94.53% | 386 | 98.0 min | 0.584 kWh |
-| **3** | 2013-09-25 19:21 | 2015-06-02 10:55 | 885,095 | 100,693 (11.38%) | 136,098 (15.38%) | 408,627 (5.84%) | 94.19% | 760 | 65.0 min | 0.523 kWh |
-| **5** | 2013-09-26 09:56 | 2015-07-06 17:48 | 933,593 | 87,220 (9.34%) | 123,660 (13.25%) | 425,766 (5.73%) | 91.08% | 1,062 | 40.0 min | 0.230 kWh |
-| **6** | 2013-11-28 12:15 | 2015-06-28 22:14 | 831,480 | 126,771 (15.25%) | 127,626 (15.35%) | 34,451 (0.55%) | 98.08% | 178 | 75.0 min | 0.480 kWh |
+| **2** | 2013-09-17 22:08 | 2015-05-28 08:05 | 889,078 | 218,914 (24.62%) | 219,633 (24.70%) | 28,444 (0.50%) | 94.54% | 391 | 98.0 min | 0.576 kWh |
+| **3** | 2013-09-25 19:21 | 2015-06-02 10:55 | 885,095 | 100,693 (11.38%) | 136,098 (15.38%) | 408,627 (5.84%) | 94.41% | 948 | 52.0 min | 0.377 kWh |
+| **5** | 2013-09-26 09:56 | 2015-07-06 17:48 | 933,593 | 87,220 (9.34%) | 123,660 (13.25%) | 425,766 (5.73%) | 92.07% | 1,416 | 28.0 min | 0.122 kWh |
+| **6** | 2013-11-28 12:15 | 2015-06-28 22:14 | 831,480 | 126,771 (15.25%) | 127,626 (15.35%) | 34,451 (0.55%) | 98.10% | 174 | 76.5 min | 0.490 kWh |
 
 #### Critical Insights from Household Data Quality:
-1. **Severe Inactivity Sparsity:** Washing machines sit completely idle between 91.08% and 98.08% of their operational lives. Any algorithm predicting power must overcome extreme class imbalance.
-2. **Behavioral Divergence:** House 5 ran 1,062 short cycles (median 40 min, 0.23 kWh), whereas House 2 ran 386 long, intensive washes (median 98 min, 0.58 kWh).
+1. **Severe Inactivity Sparsity:** Washing machines sit completely idle between 92.07% and 98.10% of their operational lives. Any algorithm predicting power must overcome extreme class imbalance.
+2. **Behavioral Divergence:** House 5 ran 1,416 short cycles (median 28 min, 0.122 kWh), whereas House 2 ran 391 long, intensive washes (median 98 min, 0.576 kWh).
 3. **Missingness vs. Off-State:** In House 2, 24.7% of minutes are missing due to gateway disconnections. Treating these missing readings as 0 W would artificially bias baseline energy calculations downward.
 
 ---
@@ -266,7 +266,7 @@ $$E_{cycle} = \\sum_{t \\in \\text{event}} \\frac{P(t)}{60{,}000}$$
 
 #### 2. Cross-Household Cycles Comparison (`docs/assets/cross_house_cycles_comparison.png`)
 - **What is Plotted:** 3-panel bar chart comparing Median Cycle Duration (min), Median Energy per Cycle (kWh), and Total Detected Cycles across Houses 2, 3, 5, and 6.
-- **Pattern Revealed:** Massive inter-household variance. House 5 runs short (40 min), low-energy (0.23 kWh) cycles with high frequency (1,062 cycles). House 2 runs long (98 min), energy-intensive (0.58 kWh) cycles.
+- **Pattern Revealed:** Massive inter-household variance. House 5 runs short (28 min), low-energy (0.122 kWh) cycles with high frequency (1,416 cycles). House 2 runs long (98 min), energy-intensive (0.576 kWh) cycles.
 - **Modelling Implication:** Proves that an appliance model trained on one home cannot be evaluated using generic cycle duration assumptions across other homes.
 
 #### 3. House 5 Representative Active Day (`docs/assets/house_5_representative_day.png`)
@@ -608,7 +608,7 @@ python scripts/build_analysis_notebook.py
 **Answer:** We are solving an underdetermined inverse problem: decomposing a single observed aggregate active power signal $P_{agg}(t) = \\sum P_m(t) + e(t)$ to recover the specific load profile of appliance $m$, the washing machine, without installing physical sub-meters.
 
 #### Q3: Why did you select House 5 for model training and evaluation?
-**Answer:** House 5 provides the highest appliance data completeness (90.7% valid data), the largest number of detected wash cycles (1,062 cycles over 21 months), and reliable submetering on Appliance 3 (AEG Washer-Dryer).
+**Answer:** House 5 provides the highest appliance data completeness (86.75% valid data after masking), the largest number of detected wash cycles (1,416 cycles over 21 months), and reliable submetering on Appliance 3 (AEG Washer-Dryer).
 
 #### Q4: Why did you resample high-frequency raw telemetry to 1-minute intervals?
 **Answer:** The raw data arrived at an irregular median interval of 7.0 seconds with over 3.58 million timing irregularities. One-minute mean resampling standardizes the temporal grid, filters high-frequency motor commutation noise, aligns with commercial smart meter telemetry, and reduces computational training cost by an order of magnitude.

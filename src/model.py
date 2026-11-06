@@ -565,23 +565,70 @@ def train_evaluate(
     )
 
     # ---------------------------------------------------------
-    # Select best ML model by total-energy estimation error
+    # Leak-Free Model Selection on Internal Validation Split
     # ---------------------------------------------------------
+    val_split = int(len(X_train) * 0.8)
+    X_inner = X_train.iloc[:val_split]
+    y_inner = y_train.iloc[:val_split]
+    X_val = X_train.iloc[val_split:]
+    y_val = y_train.iloc[val_split:]
 
-    best_name = min(
-        model_predictions,
-        key=lambda name: result[metric_keys[name]][
-            "absolute_energy_error_kWh"
-        ],
+    val_metrics = {}
+
+    # Validation: Random Forest
+    val_rf = make_regressor()
+    val_rf.fit(X_inner, y_inner)
+    val_metrics["Random Forest"] = metrics(
+        y_val, np.clip(val_rf.predict(X_val), 0, None)
+    )["absolute_energy_error_kWh"]
+
+    # Validation: LightGBM (if available)
+    if "LightGBM" in model_predictions:
+        try:
+            val_lgbm = LGBMRegressor(
+                n_estimators=200,
+                learning_rate=0.04,
+                num_leaves=31,
+                max_depth=-1,
+                subsample=0.85,
+                colsample_bytree=0.85,
+                random_state=42,
+                verbosity=-1,
+                n_jobs=-1,
+            )
+            val_lgbm.fit(X_inner, y_inner)
+            val_metrics["LightGBM"] = metrics(
+                y_val, np.clip(val_lgbm.predict(X_val), 0, None)
+            )["absolute_energy_error_kWh"]
+        except Exception:
+            pass
+
+    # Validation: Two-stage Random Forest
+    val_clf = make_classifier()
+    val_clf.fit(X_inner, (y_inner >= selected_threshold).astype(int))
+    pred_val_active = val_clf.predict(X_val)
+
+    val_act_mask = y_inner >= selected_threshold
+    val_act_reg = make_regressor()
+    val_act_reg.fit(X_inner.loc[val_act_mask], y_inner.loc[val_act_mask])
+    pred_val_two_stage = np.where(
+        pred_val_active == 1,
+        np.clip(val_act_reg.predict(X_val), 0, None),
+        0.0,
     )
+    val_metrics["Two-stage Random Forest"] = metrics(
+        y_val, pred_val_two_stage
+    )["absolute_energy_error_kWh"]
 
+    # Select best model strictly using validation split
+    best_name = min(val_metrics, key=val_metrics.get)
     best_prediction = model_predictions[best_name]
 
     result["selected_model"] = best_name
-
     result["model_selection_criterion"] = (
-        "Lowest absolute total energy estimation error among ML models"
+        "Lowest absolute total energy estimation error on chronological validation split (leak-free)"
     )
+    result["validation_energy_error_comparison_kWh"] = val_metrics
 
     # ---------------------------------------------------------
     # Save predictions and evaluation outputs

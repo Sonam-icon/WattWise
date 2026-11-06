@@ -293,7 +293,7 @@ def main():
         )
 
         # Train model for selected household
-        if house == int(cfg.get("model_house", 1)):
+        if cfg.get("model_house") == house:
 
             print(
                 f"Training disaggregation model for House {house}..."

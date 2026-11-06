@@ -53,7 +53,13 @@ def detect_cycles(
 
             for _, idx in off[off].groupby(groups[off]).groups.items():
 
-                if len(idx) <= merge_gap_minutes:
+                gap_minutes = (
+                    (idx[-1] - idx[0]).total_seconds() / 60.0 + 1.0
+                    if isinstance(idx[0], pd.Timestamp)
+                    else float(len(idx))
+                )
+
+                if gap_minutes <= merge_gap_minutes:
 
                     first_pos = segment.index.get_loc(idx[0])
                     last_pos = segment.index.get_loc(idx[-1])
